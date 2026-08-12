@@ -38,6 +38,7 @@ to Espressif's IoT Development Framework (IDF) SDK. I chose Rust for a few reaso
 * Cargo project configuration
 
 #+begin_src toml :tangle ../Cargo.toml
+// Cargo.toml
 [package]
 name = "esp-cta-tracker"
 version = "0.2.0"
@@ -56,10 +57,7 @@ path = "src/bin/main.rs"
 embassy-time = { version = "0.5", features = ["generic-queue-8"] }
 embedded-graphics = "0.8"
 embedded-svc = "0.29.0"
-esp-idf-svc = {
-  version = "0.52.1",
-  features = ["critical-section", "embassy-sync", "embassy-time-driver"]
-}
+esp-idf-svc = { version = "0.52.1", features = ["critical-section", "embassy-sync", "embassy-time-driver"] }
 
 # other crates
 anyhow = "1"        # for error handling
@@ -69,17 +67,11 @@ log = "0.4"         # for quick logging to computer for development
 # makes it extremely easy to create a TUI on any display
 # all you need to do is write a backend if necessary
 # then can use ratatui's existing components to do just about anything
-ratatui = {
-  version = "0.30",
-  default-features = false,
-  features = ["all-widgets", "layout-cache", "std"]
-}
+ratatui = { version = "0.30", default-features = false, features = ["all-widgets", "layout-cache", "std"] }
 
 # super super easy serialization and deserialization
 # maybe the single greatest library every made for any language
-serde = {
-    version = "1", default-features = false, features = ["derive"]
-}
+serde = { version = "1", default-features = false, features = ["derive"] }
 serde_json = "1.0"
 
 # bitmap image support for embedded graphics for CTA icons
@@ -109,6 +101,7 @@ Before the main loop can start, there are a few things we need to setup. First,
 we need to import all the modules we will be using. Note that the modules, functions, etc. from /cta_tracker/ are part of the library for this project, not an existing package, and their implementation will be shown later!
 
 #+begin_src rust :tangle ../src/bin/main.rs
+// src/bin/main.rs
 use core::ffi::c_void;
 use cta_tracker::{
     cta::{CtaPredictions, CtaStop, TransitMode},
@@ -144,6 +137,7 @@ I chose to read these in at compile time rather than run time to avoid hardcodin
 sensitive information into my code. In order to do so, I wrote a 'build.rs' file:
 
 #+begin_src rust :tangle ../build.rs
+// build.rs
 use std::{env, fs, path::PathBuf};
 
 fn main() {
