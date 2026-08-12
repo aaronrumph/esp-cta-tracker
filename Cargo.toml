@@ -1,0 +1,58 @@
+# [[file:org/cargo.org::*Cargo project configuration][Cargo project configuration:1]]
+[package]
+name = "esp-cta-tracker"
+version = "0.2.0"
+authors = ["Aaron Rumph <aaronbrumph@gmail.com>"]
+edition = "2021"
+resolver = "2"
+rust-version = "1.82" # 1.82 is suggested for working with ESP chips
+
+[[bin]]
+harness = false  # do not use the built-in cargo test harness -> resolve rust-analyzer errors
+name = "cta-tracker"
+path = "src/bin/main.rs"
+
+[dependencies]
+# esp-32 and embedded dev crates
+embassy-time = { version = "0.5", features = ["generic-queue-8"] }
+embedded-graphics = "0.8"
+embedded-svc = "0.29.0"
+esp-idf-svc = {
+  version = "0.52.1",
+  features = ["critical-section", "embassy-sync", "embassy-time-driver"]
+}
+
+# other crates
+anyhow = "1"        # for error handling
+heapless = "0.8"    # std::Vec and std::String alternatives with fixed sizes
+log = "0.4"         # for quick logging to computer for development
+
+# makes it extremely easy to create a TUI on any display
+# all you need to do is write a backend if necessary
+# then can use ratatui's existing components to do just about anything
+ratatui = {
+  version = "0.30",
+  default-features = false,
+  features = ["all-widgets", "layout-cache", "std"]
+}
+
+# super super easy serialization and deserialization
+# maybe the single greatest library every made for any language
+serde = {
+    version = "1", default-features = false, features = ["derive"]
+}
+serde_json = "1.0"
+
+# bitmap image support for embedded graphics for CTA icons
+tinybmp = "0.6.0"
+
+[build-dependencies]
+embuild = "0.33"
+
+[profile.dev]
+opt-level = "z"
+debug = true  # Symbols are nice, and they don't increase the size on Flash
+
+[profile.release]
+opt-level = "s"
+# Cargo project configuration:1 ends here
