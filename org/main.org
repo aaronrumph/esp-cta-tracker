@@ -10,24 +10,28 @@ This project is a little side project I worked on this summer. I wanted to make
 a little CTA departure board for my girlfriend based on the ones you see at bus
 stops and L stops in Chicago. This write-up will explain how I created it,
 as well as explain some of the decisions I made for the project! If you are interested in creating your own CTA tracker (or similar transit tracker for other agencies)
-you can follow along with this write-up. !!QUICK GUIDE!!
+you can follow along with this write-up. !!TODO: QUICK GUIDE!!
 
 * Hardware
 
-For this project, I used an esp-32 board from Waveshare with a built-in LCD display. !!LINK!!
+For this project, I used an esp-32 board from Waveshare with a built-in LCD display. !!TODO: link and hardware info!!
 
 * Tooling
 
 This project was written in Rust using /esp-idf-sys/, which provides Rust bindings
 to Espressif's IoT Development Framework (IDF) SDK. I chose Rust for a few reasons:
 
-1. Low-level control
+1. Low-level control:
    Rust is great because it does allow you to write low level code that talks directly to memory. For an embedded project like this, other languages would not necessarily provide the control over memory needed to do MMIO (like for writing to the builtin screen)
-2. Reliability
+
+2. Reliability:
    With Rust I didn't have to worry about any number of problems that could make my transit tracker unreliable, such as a buffer overflow from CTA's API returning more data than expected.
-3. Ecosystem
-   Rust has a number of existing packages (/crates/ in Rust speak) which make this sort of project much easier. For example, /ratatui/ makes it extremely easy to create a TUI on pretty much anything with a display. Additionally, Rust resources for esp-32 development are great, with lots of documentation!
-4. Familiarity
+
+3. Ecosystem:
+   Rust has a number of existing packages (/crates/ in Rust speak) which make this sort of project much easier. For example, /ratatui/ makes it extremely easy to create a TUI on pretty much anything with a display. Additionally, Rust resources for esp-32 
+   development are great, with lots of documentation!
+
+4. Familiarity:
    Most importantly, I know Rust and enjoy writing Rust code a lot! Aside from Python, Rust has become the language I use most often, particuarly for side projects, and I wanted to see how far I could take my experience with the language!
 
 
@@ -201,6 +205,7 @@ fn load_env_file(path: &PathBuf, allowed_keys: &[&str]) {
         }
     }
 }
-
-
 #+end_src
+
+!!TODO: rest of library!! 
+!!TODO: figure out many-to-many tangle?!!
