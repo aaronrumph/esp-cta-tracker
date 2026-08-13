@@ -1,0 +1,4 @@
+#+property: header-args :results silent :comments link :mkdirp yes
+#+property: header-args:rust :tangle no :noweb yes :comments link :mkdirp yes
+#+property: header-args:toml :tangle no :noweb yes :comments link :mkdirp yes
+#+property: header-args:conf :tangle no :noweb yes :comments link :mkdirp yes

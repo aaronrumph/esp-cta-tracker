@@ -1,0 +1,259 @@
+#+setupfile: ".org-setup.org"
+
+* Main application
+
+** TODO about main applicatoin
+
+** Setup and initialization
+
+*** Imports
+Before the main loop can start, there are a few things we need to setup. First,
+we need to import all the modules we will be using. Note that the modules, functions, etc. from /cta_tracker/ are part of the library for this project, not an existing package, and their implementation will be shown later!
+
+#+begin_src rust :tangle ../src/bin/main.rs
+// src/bin/main.rs
+use anyhow::anyhow;
+use core::ffi::c_void;
+use cta_tracker::{
+    cta::{CtaStop, TrainRoute},
+    display::{
+        psram::PsramBuffer,
+        screen::{Lcd, FRAMEBUFFER_BYTES, LCD_PINS},
+    },
+    time::ChicagoClock,
+    tui::{TransitCardConfig, TransitTui},
+};
+use embedded_svc::{
+    http::client::Client,
+    wifi::{AuthMethod, ClientConfiguration, Configuration as WifiConfiguration},
+};
+use esp_idf_svc::{
+    eventloop::EspSystemEventLoop,
+    hal::{delay::FreeRtos, peripherals::Peripherals},
+    http::client::{Configuration as HttpConfig, EspHttpConnection},
+    nvs::EspDefaultNvsPartition,
+    sys,
+    wifi::{BlockingWifi, EspWifi},
+};
+use std::time::Duration;
+
+use log::{debug, info, warn};
+
+#+end_src
+
+*** Wifi and API keys
+There are some constants we need to set that will survive the lifetime of the
+application. First, Wifi information and API keys, which are turned into
+rustc env variables at compile time (see [[file:../build.rs][build.rs]]).
+#+begin_src rust :tangle ../src/bin/main.rs
+
+// Wifi information and API keys for CTA's APIs are turned into rustc env variables
+const WIFI_SSID: &str = env!("WIFI_SSID");
+const WIFI_PASSWORD: &str = env!("WIFI_PASSWORD");
+
+const CTA_BUS_API_KEY: &str = env!("CTA_BUS_API_KEY");
+const CTA_TRAIN_API_KEY: &str = env!("CTA_TRAIN_API_KEY");
+
+#+end_src
+
+*** Tracking stops
+Next, we can set which stops we want the tracker to track! When I was designing this
+part of the tracker, there were a number of challenges that kept coming up. First,
+when there were no API results for the train or bus in question, there would be no
+route information to use to construct the departure board entry, i.e., there is
+no way to decide which icon to use, what the destination is, or even what the /name/
+of the route is.
+
+I therefore decided that it was worth bundling that information with the stop's
+id or its platform id, so that even without any predictions, I could still display
+information about the route there are no predictions for.
+
+#+begin_src rust :tangle ../src/bin/main.rs
+// These are the CTA stops which the transit tracker will get arrival times for.
+// They make use of the `TrackedStop` struct, which has fields for the
+// platform id/the stop id, the name of the route, the stop's name, and the route's
+// headsign/destination.
+const STOPS: [TrackedStop; 5] = [
+    TrackedStop::bus(
+        "14896",              // the stop_id for the station
+        "Bus 76",             // The name of the route
+        "Diversey / Mildred", // the name of the station
+        "Harlem",             // destination of the route
+    ),
+    TrackedStop::bus("5764", "Bus 8", "Halsted / Wellington", "79th Street"),
+    TrackedStop::train("30231", TrainRoute::Brown, "Brown Line", "Wellington", "Kimball"),
+    TrackedStop::train("30232", TrainRoute::Brown, "Brown Line", "Wellington", "Loop"),
+    TrackedStop::train("30256", TrainRoute::Red, "Red Line", "Belmont", "95th / Dan Ryan"),
+];
+
+#+end_src
+
+For most cases, this is all the setup you need in order to get arrival predicitons for
+the train or bus stops you want! For this project, however, I wanted to make it
+so that if there are Purple Line trains coming to Wellington, then it will display a
+Purple Line icon, with the correct route and destination names. Unfortunately, getting
+arrival times for the platform id "30232", also gives arrival times for the Brown Line,
+with the only way to differentiate between the two being to inspect the API response.
+Essentially, in order to handle both Loop-bound Purple Line trains and Loop-bound
+Brown Line trains from Wellington, I needed to hard code both possibilites in the above
+format, and then read the response to decide which option to actually display.
+
+#+begin_src rust :tangle ../src/bin/main.rs
+// Notice that the platform_id/stop_id below is the same as for the Loop-bound
+// Brown Line trains at Wellington
+const PURPLE_TO_LOOP: TrackedStop =
+    TrackedStop::train("30232", TrainRoute::Purple, "Purple Line", "Wellington", "Loop");
+
+// I also added this for the sake of making my code more readable and avoiding magic
+// numbers
+const PURPLE_OR_KIMBALL_SLOT: usize = 2;
+
+#+end_src
+
+*** Hardware initialization
+The next step was setting up the hardware to be able to:
++ Make network requests using HTTP and HTTPS
++ Store the results/predicitions in memory
++ Display information on the LCD
++ Keep time
+
+This marks the start of the actual application itself (yay!), as the hardware setup
+and initialization will need to run everytime the application starts up.
+
+#+begin_src rust :tangle ../src/bin/main.rs
+// The main function for the application returns an `anyhow::Result`
+// which makes it much easier to let the application crash in a
+// reasonable way when there is an unrecoverable error.
+// Especially nice is that this makes the compiler accept the
+// `?` operator to propogate errors without having to explicitly
+// handle every possible error type
+fn main() -> anyhow::Result<()> {
+
+    // Recommended by the esp-idf-svc developers
+    // (see https://github.com/esp-rs/esp-idf-template/issues/71)
+    esp_idf_svc::sys::link_patches();
+
+    // This function is marked unsafe because it calls ffi C code.
+    // The point of this function is to ensure that any heap allocations
+    // bigger than 4kb (arbitrary choice on my part) go on PSRAM rather
+    // than smaller on board ram.
+    unsafe {
+        sys::heap_caps_malloc_extmem_enable(4096);
+    }
+
+    // Logging setup
+    esp_idf_svc::log::EspLogger::initialize_default();
+    info!("Starting transit tracker!")
+
+    // The LCD uses MMIO to draw to the screen, so here I am creating
+    // a handle to an abstraction for the relevant GPIO pins.
+    // Then, initializing a frame buffer to render to that can then
+    // be flushed all at once to the display.
+    // NOTE: framebuffer is 800 * 480 pixels * 16 bits/pixel =
+    // 6_144_000 bits (larger than SRAM) so needs to go on PSRAM
+    let mut lcd = Lcd::new(LCD_PINS)?;
+    let mut framebuffer = PsramBuffer::new(FRAMEBUFFER_BYTES)?;
+    let mut tui = TransitTui::new(framebuffer.as_mut_slice())?;
+
+    // Now can draw a startup screen while waiting for other hardware init
+    tui.draw_startup(&mut lcd, "Starting CTA Tracker!")
+
+    // Wifi setup
+    debug!("Wifi SSID: {}", WIFI_SSID);
+
+    let peripherals = Peripherals::take()?;
+    let sysloop = EspSystemEventLoop::take()?;
+    let nvs = EspDefaultNvsPartition::take()?;
+
+    // NOTE: You may need to change AuthMethod if having problems connecting to
+    // your Wifi. Also, you need to make sure that you have 2.4ghz wifi, because
+    // esp32 cannot use 5/6ghz
+    let wifi_config = WifiConfiguration::Client(ClientConfiguration {
+        ssid: WIFI_SSID.try_into().map_err(|_| anyhow!("Wi-Fi SSID invalid/too long(?)"))?,
+        password: WIFI_PASSWORD
+            .try_into()
+            .map_err(|_| anyhow!("Wi-Fi password invalid/is too long(?)"))?,
+        auth_method: AuthMethod::WPA2Personal,
+        ..Default::default()
+    });
+
+    info!("Starting Wifi setup");
+    let mut wifi = BlockingWifi::wrap(
+        EspWifi::new(
+            peripherals.modem,
+            sysloop.clone(),
+            Some(nvs)
+        )?,
+        sysloop
+    )?;
+    wifi.set_configuration(&wifi_config)?;
+    wifi.start()?;
+    info!("Connecting to Wifi")
+
+    // Retry logic for trying to connect to Wifi since I was having some problems
+    // at my apartment
+    let mut connected = false;
+    for connection_attempt in 1..5 {
+        info!("Wifi connect attempt {attempt}");
+
+        match wifi.connect() {
+            Ok(_) => match wifi.wait_netif_up() {
+                Ok(_) => {
+                    connected = true;
+                    break;
+                }
+                Err(err) => {
+                    warn!("Widi couldn't connect on attempt {attempt}: {:?}", err);
+                }
+            },
+            Err(err) => {
+                    warn!("Wifi couldn't connect on attempt {attempt}: {:?}", err);
+            }
+        }
+
+        // in case cannot connect to Wifi, will disconnect fully and try again in 5 seconds
+        let _ = wifi.disconnect();
+        FreeRtos::delay_ms(5000);
+    }
+
+}
+
+// If 5 attempts to connect to Wifi fail, then will stop trying and instead
+// hope for reset or fixed Wifi!
+if !connected {
+    tui.draw_bad_wifi_msg(
+        &mut lcd,
+        "Could not connect to Wifi, reset tracker or resart wifi!",
+    )?;
+
+    loop {
+        FreeRtos::delay_ms(60_000);
+    }
+}
+info!("Connected succesfully to Wifi")
+
+/* IP info for debugging (very useful!)
+let ip_info = wifi.wifi().sta_netif().get_ip_info()?;
+debug!("IP info: {:/}", ip_info);
+,*/
+
+// Allocating buffer for API responses and setting up http_config
+// NOTE: 16k should be more than enough, but if the tracker is crashing,
+// it's likely caused by this buffer being too small!
+let mut api_response_buffer = vec![0_u8; 16 * 1024];
+let http_config = HttpConfig {
+    timeout: Some(Duration::from_secs(20)),
+    crt_bundle_attach: Some(attach_crt_bundle), // ffi raw pointer
+    ..Default::default()
+};
+
+// Clock and tracked stops setup
+let clock = ChicagoClock::new()?;
+let tracked_stops = &STOPS;
+
+info!("Setup complete! Starting main tracker loop");
+
+#+end_src
+
+
+*

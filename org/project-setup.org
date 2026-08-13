@@ -1,44 +1,16 @@
-#+title: ESP CTA Bus and Train Tracker
-#+author: Aaron Rumph
-#+property: header-args :mkdirp yes :comments link :padline yes
-#+property: header-args:rust :results silent
-#+startup: overview
+#+setupfile: ".org-setup.org"
 
-* Intro
+* Tooling and project setup
 
-This project is a little side project I worked on this summer. I wanted to make
-a little CTA departure board for my girlfriend based on the ones you see at bus
-stops and L stops in Chicago. This write-up will explain how I created it,
-as well as explain some of the decisions I made for the project! If you are interested in creating your own CTA tracker (or similar transit tracker for other agencies)
-you can follow along with this write-up. !!TODO: QUICK GUIDE!!
-
-* Hardware
-
-For this project, I used an esp-32 board from Waveshare with a built-in LCD display. !!TODO: link and hardware info!!
-
-* Tooling
-
-This project was written in Rust using /esp-idf-sys/, which provides Rust bindings
-to Espressif's IoT Development Framework (IDF) SDK. I chose Rust for a few reasons:
-
-1. Low-level control:
-   Rust is great because it does allow you to write low level code that talks directly to memory. For an embedded project like this, other languages would not necessarily provide the control over memory needed to do MMIO (like for writing to the builtin screen)
-
-2. Reliability:
-   With Rust I didn't have to worry about any number of problems that could make my transit tracker unreliable, such as a buffer overflow from CTA's API returning more data than expected.
-
-3. Ecosystem:
-   Rust has a number of existing packages (/crates/ in Rust speak) which make this sort of project much easier. For example, /ratatui/ makes it extremely easy to create a TUI on pretty much anything with a display. Additionally, Rust resources for esp-32 
-   development are great, with lots of documentation!
-
-4. Familiarity:
-   Most importantly, I know Rust and enjoy writing Rust code a lot! Aside from Python, Rust has become the language I use most often, particuarly for side projects, and I wanted to see how far I could take my experience with the language!
-
+** TODO write tooling info
 
 * Cargo project configuration
 
+** TODO write cargo setup info
+
+** Cargo.toml
+
 #+begin_src toml :tangle ../Cargo.toml
-// Cargo.toml
 [package]
 name = "esp-cta-tracker"
 version = "0.2.0"
@@ -88,45 +60,6 @@ debug = true  # Symbols are nice, and they don't increase the size on Flash
 opt-level = "s"
 #+end_src
 
-* Main application
-
-The main application for the transit tracker is just a simple loop. After some setup
-when first run, the main loop queries the CTA bus tracker and train tracker APIs to
-get arrival times every 30 seconds and then adjusts the TUI display accordingly.
-
-
-** Initialization and setup
-
-Before the main loop can start, there are a few things we need to setup. First,
-we need to import all the modules we will be using. Note that the modules, functions, etc. from /cta_tracker/ are part of the library for this project, not an existing package, and their implementation will be shown later!
-
-#+begin_src rust :tangle ../src/bin/main.rs
-// src/bin/main.rs
-use core::ffi::c_void;
-use cta_tracker::{
-    cta::{CtaPredictions, CtaStop, TransitMode},
-    display::{
-        color::Rgb565,
-        psram::PsramBuffer,
-        screen::{Lcd, FRAMEBUFFER_BYTES, LCD_PINS},
-    },
-};
-use embedded_svc::{
-    http::client::Client,
-    wifi::{AuthMethod, ClientConfiguration, Configuration as WifiConfiguration},
-};
-use esp_idf_svc::{
-    eventloop::EspSystemEventLoop,
-    hal::{delay::FreeRtos, peripherals::Peripherals},
-    http::client::{Configuration as HttpConfig, EspHttpConnection},
-    nvs::EspDefaultNvsPartition,
-    sys,
-    wifi::{BlockingWifi, EspWifi},
-};
-use std::time::Duration;
-
-use log::{debug, error, info, warn};
-#+end_src
 
 Next, you need to set some useful constants which will be used throughout the main loop.
 Because the API requests need Wifi, you need a way of connecting to a network.
@@ -136,8 +69,8 @@ file in the project root. I keep my API keys in a "~/.api_keys.env" file.
 I chose to read these in at compile time rather than run time to avoid hardcoding
 sensitive information into my code. In order to do so, I wrote a 'build.rs' file:
 
+** build.rs
 #+begin_src rust :tangle ../build.rs
-// build.rs
 use std::{env, fs, path::PathBuf};
 
 fn main() {
@@ -201,5 +134,3 @@ fn load_env_file(path: &PathBuf, allowed_keys: &[&str]) {
 }
 #+end_src
 
-!!TODO: rest of library!! 
-!!TODO: figure out many-to-many tangle?!!

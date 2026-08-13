@@ -1,0 +1,8 @@
+#+title: ESP CTA Bus and Train Tracker
+#+author: Aaron Rumph
+#+setupfile: "org/.org-setup.org"
+
+#+include: "org/introduction.org"
+#+include: "org/project-setup.org"
+#+include: "org/cta-api.org"
+#+include: "org/application.org"
